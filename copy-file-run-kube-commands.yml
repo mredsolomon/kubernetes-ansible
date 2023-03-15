@@ -1,0 +1,72 @@
+- hosts: kube_server
+  become: true
+  remote_user: ubuntu
+  
+  vars_files:
+    - ansible-vars.yml
+
+  tasks:
+
+  - name: Make "working" directory in home directory
+    file: path={{ home_dir }}/working state=directory
+
+# this assumes that the sa.yml file is in working directory
+  - name: Copy sa.yml with ubuntu owner and permissions
+    copy:
+      src: sa.yml
+      dest: /home/ubuntu/working/sa.yml
+      owner: ubuntu
+      group: ubuntu
+      mode: '0666'
+
+# this assumes that the clustorrole.yml file is in working directory
+  - name: Copy clustorrole.yml with ubuntu owner and permissions
+    copy:
+      src: clusterrole.yml
+      dest: /home/ubuntu/working/clusterrole.yml
+      owner: ubuntu
+      group: ubuntu
+      mode: '0666'
+
+  - name: 'Run get nodes'
+    shell: "kubectl get nodes --kubeconfig=/home/ubuntu/.kube/config"
+    register: nodes
+  - debug:
+      var: nodes.stdout_lines
+
+
+  - name: 'Run apply sa.yml, create a service account'
+    shell: "kubectl apply -f /home/ubuntu/working/sa.yml --kubeconfig=/home/ubuntu/.kube/config"
+    register: applyas
+  - debug:
+      var: applyas.stdout
+
+  - name: 'Run apply clusterrole.yml, set Cluster Role Binding'
+    shell: "kubectl apply -f /home/ubuntu/working/clusterrole.yml --kubeconfig=/home/ubuntu/.kube/config"
+    register: applycluster
+  - debug:
+      var: applycluster.stdout
+
+
+  - name: 'Run get dashboard secret name'
+    shell: 'kubectl -n kubernetes-dashboard get sa/admin-user -o jsonpath="{.secrets[0].name}" --kubeconfig=/home/ubuntu/.kube/config'
+
+    register: dashboardsecret
+  - debug:
+      msg: "{{dashboardsecret.stdout}}"
+    
+  - name: 'Run get dashboard secret value'
+    shell: 'kubectl -n kubernetes-dashboard get secret {{dashboardsecret.stdout}} -o jsonpath="{.data.token}" --kubeconfig=/home/ubuntu/.kube/config'
+
+    register: dashboardsecretval
+  - debug:
+      msg: "{{dashboardsecretval.stdout}}"
+
+  - name: get value decoded
+    shell: |
+      echo '{{ dashboardsecretval.stdout }}' | base64 --decode
+    register: decodval
+
+  - debug:
+      var: decodval.stdout
+
